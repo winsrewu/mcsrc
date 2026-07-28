@@ -52,7 +52,7 @@ jobs:
           path: java/build/libs/
       - run: npm ci
       - run: npx playwright install --with-deps ${{ matrix.browser }}
-      - run: npx playwright test tests/diff.spec.ts --project=${{ matrix.browser }} --debug
+      - run: npx playwright test tests/diff.spec.ts --project=${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
