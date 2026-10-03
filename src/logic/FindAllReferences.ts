@@ -84,10 +84,23 @@ function getQueryType(query: ReferenceKey): "class" | "method" | "field" {
 
 /** Line and preview text for an offset in the decompiled source. */
 function locate(source: string, start: number): { line: number; preview: string } {
-    const upTo = source.slice(0, start);
-    const line = upTo.match(/\n/g)?.length ?? 0;
+    // Walk out to the line bounds instead of splitting the whole source for every site.
+    let lineStart = start;
+    while (lineStart > 0 && source.charCodeAt(lineStart - 1) !== 10) {
+        lineStart--;
+    }
 
-    return { line, preview: (source.split("\n")[line] ?? "").trim() };
+    let lineEnd = start;
+    while (lineEnd < source.length && source.charCodeAt(lineEnd) !== 10) {
+        lineEnd++;
+    }
+
+    let line = 0;
+    for (let i = source.indexOf("\n"); i !== -1 && i < start; i = source.indexOf("\n", i + 1)) {
+        line++;
+    }
+
+    return { line, preview: source.slice(lineStart, lineEnd).trim() };
 }
 
 /**

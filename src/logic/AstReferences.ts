@@ -85,7 +85,8 @@ export function findReferenceSites(
     resolved: readonly Token[],
     target: ReferenceTarget,
 ): ReferenceSite[] {
-    // Resolved tokens indexed by the offset where they start.
+    // Resolved tokens indexed by the offset where they start: the common case is that
+    // Vineflower reported the reference at exactly the offset tree-sitter found it.
     const byStart = new Map<number, Token[]>();
     for (const token of resolved) {
         const bucket = byStart.get(token.start);
@@ -96,22 +97,41 @@ export function findReferenceSites(
         }
     }
 
+    // Sorted by start, for the fallback lookup below.
+    const ordered = [...resolved].sort((a, b) => a.start - b.start);
+
+    /**
+     * Resolved tokens overlapping [start, end). Vineflower spans are effectively disjoint,
+     * so this is a binary search rather than a scan: the first candidate is the only one
+     * that can overlap, and at most one more follows it.
+     */
+    const overlapping = (start: number, end: number, out: Token[]): Token[] => {
+        let low = 0;
+        let high = ordered.length;
+        while (low < high) {
+            const mid = (low + high) >> 1;
+            if (ordered[mid].start + ordered[mid].length > start) {
+                high = mid;
+            } else {
+                low = mid + 1;
+            }
+        }
+
+        for (let i = low; i < ordered.length && ordered[i].start < end; i++) {
+            out.push(ordered[i]);
+        }
+        return out;
+    };
+
     const sites: ReferenceSite[] = [];
 
     for (const identifier of identifiers) {
         const end = identifier.start + identifier.length;
 
-        // The common case: Vineflower reported the reference at the same offset.
-        const candidates = byStart.get(identifier.start) ?? [];
-
-        // Fall back to any resolved token overlapping the identifier, which covers spans
-        // that only cover part of what the source writes.
-        if (candidates.length === 0) {
-            for (const token of resolved) {
-                if (token.start < end && identifier.start < token.start + token.length) {
-                    candidates.push(token);
-                }
-            }
+        let candidates = byStart.get(identifier.start);
+        if (!candidates) {
+            // The span Vineflower reported may only cover part of what the source writes.
+            candidates = overlapping(identifier.start, end, []);
         }
 
         if (candidates.some(token => matchesTarget(token, target))) {
