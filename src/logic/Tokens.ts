@@ -34,9 +34,19 @@ export interface TokenLocation {
     length: number;
 }
 
+/** The 1-based line and column of an offset, matching how Monaco counts positions. */
+export function locationOf(source: string, start: number, length: number): TokenLocation {
+    let line = 1;
+    let lineStart = 0;
+
+    for (let i = source.indexOf("\n"); i !== -1 && i < start; i = source.indexOf("\n", i + 1)) {
+        line++;
+        lineStart = i + 1;
+    }
+
+    return { line, column: start - lineStart + 1, length };
+}
+
 export function getTokenLocation(result: DecompileResult, token: Token): TokenLocation {
-    const sourceUpTo = result.source.slice(0, token.start);
-    const line = sourceUpTo.match(/\n/g)!.length + 1;
-    const column = sourceUpTo.length - sourceUpTo.lastIndexOf("\n");
-    return { line, column, length: token.length };
+    return locationOf(result.source, token.start, token.length);
 }

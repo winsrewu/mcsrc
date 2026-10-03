@@ -162,6 +162,19 @@ export class JarIndex {
         return Promise.all(results).then(arrays => arrays.flat());
     }
 
+    async getStringReference(value: string): Promise<ClassName[]> {
+        await this.indexJar();
+
+        let results: Promise<ClassName[]>[] = [];
+
+        for (const worker of this.workers) {
+            results.push(worker.c.getStringReference(value));
+        }
+
+        // The same class can be indexed by several workers, so deduplicate.
+        return Promise.all(results).then(arrays => [...new Set(arrays.flat())]);
+    }
+
     async getMemberData(): Promise<MemberData[]> {
         await this.indexJar();
 

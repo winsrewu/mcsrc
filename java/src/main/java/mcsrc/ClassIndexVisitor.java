@@ -58,6 +58,10 @@ final class ClassIndexVisitor extends ClassVisitor {
 				indexClassReference(callerEntry, new Entry.Class(type.getInternalName()));
 			}
 
+			if (value instanceof String constant) {
+				indexer.addStringReference(callerEntry.owner(), constant);
+			}
+
 			super.visitLdcInsn(value);
 		}
 

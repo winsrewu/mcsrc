@@ -6,6 +6,7 @@ import { openCodeTab, openInheritanceViewTab } from "../logic/tabs";
 import { referencesQuery } from "../logic/State";
 import { dottedClassNameFromClassName, outerClassFilePath, toClassFilePath, toClassName, withoutClassExtension, type ClassName } from "../utils/Names";
 import { requestTokenJump } from "./CodeExtensions";
+import { goToString } from "../logic/FindAllReferences";
 import type { ReferenceKey } from "../workers/jar-index/types";
 
 type MemberType = "class" | "field" | "method";
@@ -118,6 +119,13 @@ function getResultClassFilePath(item: SearchResult) {
 function openSearchResult(item: SearchResult) {
     const classFilePath = getResultClassFilePath(item);
 
+    // A string hit carries the literal's offset, so it can be selected exactly.
+    if (item.type === "classes" && item.string !== undefined) {
+        const className = toClassName(classFilePath);
+        goToString({ className, start: item.stringStart ?? 0, length: item.string?.length ?? 0 });
+        return;
+    }
+
     if (item.type !== "classes") {
         const [, name, descriptor] = item.value.split(":");
         const targetType = item.type === "methods" ? "method" : "field";
@@ -136,6 +144,7 @@ function formatSearchResult(item: SearchResult, mutedColor: string) {
         return <>
             <span style={{ color: mutedColor }}>{path.slice(0, nameStart)}</span>
             {path.slice(nameStart)}
+            {item.string && <span style={{ color: mutedColor }}> — "{item.string}"</span>}
         </>;
     }
 

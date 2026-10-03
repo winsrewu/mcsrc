@@ -14,6 +14,7 @@ import org.objectweb.asm.Opcodes;
 
 public final class Indexer {
     private final Map<String, Set<String>> references = new HashMap<>();
+    private final Map<String, Set<String>> stringReferences = new HashMap<>();
     private final Map<String, ClassData> classes = new HashMap<>();
     private final Map<String, MutableMemberData> members = new HashMap<>();
 
@@ -31,6 +32,11 @@ public final class Indexer {
         return Set.copyOf(references.getOrDefault(key, Set.of()));
     }
 
+    /** Classes whose constant pool contains the given string constant. */
+    public Set<String> stringReferences(String value) {
+        return Set.copyOf(stringReferences.getOrDefault(value, Set.of()));
+    }
+
     public int referenceCount() {
         return references.values().stream().mapToInt(Set::size).sum();
     }
@@ -43,6 +49,7 @@ public final class Indexer {
 
     public void clear() {
         references.clear();
+        stringReferences.clear();
         classes.clear();
         members.clear();
     }
@@ -51,6 +58,16 @@ public final class Indexer {
         if (key.startsWith("net/minecraft") || key.startsWith("com/mojang")) {
             references.computeIfAbsent(key, ignored -> new HashSet<>()).add(value);
         }
+    }
+
+    /**
+     * Records that a class embeds a string constant.
+     *
+     * The class filter the other references use is deliberately not applied here: a literal is
+     * only reachable through this index, so filtering by owner would hide matches.
+     */
+    void addStringReference(String owner, String value) {
+        stringReferences.computeIfAbsent(value, ignored -> new HashSet<>()).add(owner);
     }
 
     void addClass(String name, String superName, String[] interfaces, int access) {

@@ -8,8 +8,7 @@ import { classesList } from '../logic/JarFile';
 import { CodeTab, getOpenTab } from '../logic/tabs';
 import { message, Spin } from 'antd';
 import { LoadingOutlined } from '@ant-design/icons';
-import { getTokenLocation } from '../logic/Tokens';
-import { getNextJumpToken, nextReferenceNavigation } from '../logic/FindAllReferences';
+import { getNextJumpLocation, nextReferenceNavigation } from '../logic/FindAllReferences';
 import { setupJavaBytecodeLanguage } from '../utils/JavaBytecode';
 import { applyJavadocCodeExtensions } from '../javadoc/JavadocCodeExtensions';
 import { ENABLE_JAVADOC_EDITOR } from '../javadoc/JavadocConfig';
@@ -217,12 +216,12 @@ const Code = () => {
             lineHighlightRef.current?.clear();
 
             const executeScroll = () => {
-                const nextJumpToken = getNextJumpToken(decompileResult);
-                const nextJumpLocation = nextJumpToken && getTokenLocation(decompileResult, nextJumpToken);
+                const nextJumpLocation = getNextJumpLocation(decompileResult);
 
                 if (nextJumpLocation) {
                     const { line, column, length } = nextJumpLocation;
                     editor.revealLinesInCenterIfOutsideViewport(line, line);
+                    // Selects the reference or string literal that was clicked.
                     editor.setSelection(new Range(line, column, line, column + length));
                 }
             };

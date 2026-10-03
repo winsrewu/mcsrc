@@ -4,7 +4,7 @@ import { getReferenceData } from "../workers/decompile/client";
 import { openCodeTab } from "./tabs";
 import { minecraftJar } from "./MinecraftApi";
 import { referencesQuery } from "./State";
-import type { Token } from "./Tokens";
+import { locationOf, type TokenLocation } from "./Tokens";
 import type { DecompileResult } from "../workers/decompile/types";
 import type { ReferenceKey, ReferenceString } from "../workers/jar-index/types";
 import { classNameFromClassFilePath, toClassFilePath, toClassName, type ClassName } from "../utils/Names";
@@ -183,26 +183,39 @@ export const isViewingReferences = referencesQuery.pipe(
     map((query) => query.length > 0)
 );
 
-interface ReferenceNavigation {
-    /** The class to navigate to. */
+interface NavigationSite {
     className: ClassName;
-    /** The reference site to select in that class. */
-    site: ReferenceSite;
+    /** Character offset of the site in that class's decompiled source. */
+    start: number;
+    length: number;
 }
 
-export const nextReferenceNavigation = new BehaviorSubject<ReferenceNavigation | undefined>(undefined);
+export const nextReferenceNavigation = new BehaviorSubject<NavigationSite | undefined>(undefined);
+
+/** Opens `className` and asks the editor to reveal and select the site. */
+export function openAtSite(className: ClassName, start: number, length: number) {
+    const tabClassName = classNameFromClassFilePath(toClassFilePath(className));
+    openCodeTab(toClassFilePath(tabClassName));
+    nextReferenceNavigation.next({ className: tabClassName, start, length });
+}
 
 export function goToReference(site: ReferenceSite) {
-    const className = classNameFromClassFilePath(toClassFilePath(site.className));
-    openCodeTab(toClassFilePath(className));
-    nextReferenceNavigation.next({ className, site });
+    openAtSite(site.className, site.start, site.length);
+}
+
+/** Opens the class containing a string literal and selects the literal. */
+export function goToString(site: { className: ClassName; start: number; length: number }) {
+    openAtSite(site.className, site.start, site.length);
 }
 
 /**
- * The token to select once the referenced class has been decompiled. The reference offset
- * came from tree-sitter running over the same source, so it points straight at the reference.
+ * The selection to apply once the class has been decompiled.
+ *
+ * The offsets come from tree-sitter running over the same decompiled source, so they point
+ * straight at the reference or literal. A string literal is not a Vineflower token, so the
+ * span is used directly rather than looking for a token to select.
  */
-export function getNextJumpToken(decompileResult: DecompileResult): Token | undefined {
+export function getNextJumpLocation(decompileResult: DecompileResult): TokenLocation | undefined {
     const navigation = nextReferenceNavigation.getValue();
 
     if (!navigation || decompileResult.className !== navigation.className) {
@@ -211,7 +224,9 @@ export function getNextJumpToken(decompileResult: DecompileResult): Token | unde
 
     nextReferenceNavigation.next(undefined);
 
-    const { start } = navigation.site;
-    return decompileResult.tokens.find(token => token.start === start)
-        ?? decompileResult.tokens.find(token => token.start <= start && start < token.start + token.length);
+    const { start, length } = navigation;
+    const location = locationOf(decompileResult.source, start, length);
+
+    // The reveal lands one character to the left of the site, so shift the selection right.
+    return { ...location, column: location.column + 1 };
 }

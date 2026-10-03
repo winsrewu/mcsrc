@@ -7,9 +7,9 @@ import { openJar } from "../../utils/Jar";
 import { JarIndexer } from "../jar-index/types";
 import { DEFAULT_VERSION, type Version } from "../../logic/vineflower/versions";
 import { classNameFromDottedClassName, toClassName, type ClassName } from "../../utils/Names";
-import { extractIdentifiers } from "./AstParser";
+import { extractIdentifiers, extractStrings } from "./AstParser";
 import { createWorkCoordinator } from "../sharedState";
-import type { AstToken } from "../../logic/AstSearch";
+import type { AstString, AstToken } from "../../logic/AstSearch";
 
 /** Everything the reference matcher needs for one class. */
 export interface ReferenceData {
@@ -18,6 +18,8 @@ export interface ReferenceData {
     identifiers: AstToken[];
     /** The tokens Vineflower resolved, which resolve those identifiers. */
     resolved: Token[];
+    /** String literals found in the decompiled source. */
+    strings: AstString[];
     /** The decompiled source the offsets refer to. */
     source: string;
 }
@@ -200,6 +202,9 @@ export class DecompileWorker {
                 ? []
                 : await extractIdentifiers(source.source, source.tokens),
             resolved: source.tokens,
+            strings: source.language === "bytecode"
+                ? []
+                : await extractStrings(source.source),
             source: source.source,
         })));
     });

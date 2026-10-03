@@ -1,7 +1,7 @@
 import { load } from "../../../java/build/generated/teavm/wasm-gc/mcsrc.wasm-runtime.js";
 import indexerWasm from '../../../java/build/generated/teavm/wasm-gc/mcsrc.wasm?url';
 import { openJar, type Jar } from "../../utils/Jar.js";
-import type { ClassFilePath, ClassName } from "../../utils/Names.js";
+import { toClassName, type ClassFilePath, type ClassName } from "../../utils/Names.js";
 
 export type Class = ClassName;
 export type Method = `${ClassName}:${string}:${string}`;
@@ -76,6 +76,12 @@ export class JarIndexer {
         return indexer.getReference(key);
     };
 
+    /** Classes whose constant pool contains the given string constant. */
+    getStringReference = async (value: string): Promise<ClassName[]> => {
+        const indexer = await this.getIndexer();
+        return indexer.getStringReference(value).map(toClassName);
+    };
+
     getReferenceSize = async (): Promise<number> => {
         const indexer = await this.getIndexer();
         return indexer.getReferenceSize();
@@ -108,6 +114,7 @@ export class JarIndexer {
 interface Indexer {
     index(data: ArrayBufferLike): void;
     getReference(key: ReferenceKey): [ReferenceString];
+    getStringReference(value: string): string[];
     getReferenceSize(): number;
     getBytecode(classData: ArrayBufferLike[]): string;
     getClassData(): ClassDataString[];

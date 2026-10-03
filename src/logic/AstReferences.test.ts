@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { collectIdentifiers, type AstToken, type SyntaxNodeLike } from "./AstSearch";
+import { collectIdentifiers, collectStrings, unquoteLiteral, type AstToken, type SyntaxNodeLike } from "./AstSearch";
 import { findReferenceSites, parseReferenceTarget, type ReferenceTarget } from "./AstReferences";
 import type { Token } from "./Tokens";
 import type { ClassName } from "../utils/Names";
@@ -10,8 +10,8 @@ interface Leaf {
     text: string;
 }
 
-function leaves(spec: Leaf[], source: string): SyntaxNodeLike[] {
-    let cursor = 0;
+function leaves(spec: Leaf[], source: string, from = 0): SyntaxNodeLike[] {
+    let cursor = from;
 
     return spec.map(leaf => {
         const index = source.indexOf(leaf.text, cursor);
@@ -229,5 +229,104 @@ describe("findReferenceSites", () => {
         const resolved = [methodToken(5, 8, "a/B", "Renderer", "()V")];
 
         expect(sites(ids, resolved, { kind: "method", className: "a/B", name: "Renderer", descriptor: "()V" })).toEqual([0]);
+    });
+});
+
+describe("collectStrings", () => {
+    it("collects a simple literal without its quotes", () => {
+        const source = 'String a = "hello";';
+        const literal = leaves([{ type: "string_literal", text: '"hello"' }], source)[0];
+        const root = node("program", [literal], 0, source.length);
+
+        const strings = collectStrings(root);
+        expect(strings).toHaveLength(1);
+        expect(strings[0].text).toBe("hello");
+        expect(strings[0].start).toBe(source.indexOf('"hello"'));
+    });
+
+    it("joins the fragments tree-sitter splits an escaped literal into", () => {
+        // The literal as written in the source: "tab\there"
+        const raw = '"tab\\there"';
+        const source = `String a = ${raw};`;
+        const literalStart = source.indexOf(raw);
+
+        // tree-sitter splits it at the escape, so the fragments are not contiguous.
+        const joinFragments = (literalSource: string, fragments: string[]): SyntaxNodeLike => {
+            let at = 0;
+            const children = fragments.map(text => {
+                const index = literalSource.indexOf(text, at);
+                at = index + text.length;
+                return {
+                    type: "string_fragment",
+                    text,
+                    startIndex: literalStart + index,
+                    endIndex: literalStart + index + text.length,
+                    childCount: 0,
+                    child: () => null,
+                } satisfies SyntaxNodeLike;
+            });
+
+            return node("string_literal", children, literalStart, literalStart + literalSource.length);
+        };
+
+        const literal = joinFragments(raw, ["tab", "here"]);
+        const root = node("program", [literal], 0, source.length);
+
+        // The tab escape itself is not part of either fragment, so the joined content is
+        // "tabhere"; what matters is that the fragments are combined rather than dropped.
+        expect(collectStrings(root)[0].text).toBe("tabhere");
+    });
+
+    it("collects an empty literal", () => {
+        const source = 'String a = "";';
+        const literal = leaves([{ type: "string_literal", text: '""' }], source)[0];
+        const root = node("program", [literal], 0, source.length);
+
+        expect(collectStrings(root)[0].text).toBe("");
+    });
+
+    it("finds literals nested inside expressions", () => {
+        const source = 'log("first", "second");';
+        const children = leaves([
+            { type: "identifier", text: "log" },
+            { type: "string_literal", text: '"first"' },
+            { type: "string_literal", text: '"second"' },
+        ], source);
+        const root = node("program", children, 0, source.length);
+
+        expect(collectStrings(root).map(s => s.text)).toEqual(["first", "second"]);
+    });
+
+    it("ignores character literals", () => {
+        const source = "char c = 'x';";
+        const root = node("program", leaves([{ type: "character_literal", text: "'x'" }], source), 0, source.length);
+
+        expect(collectStrings(root)).toEqual([]);
+    });
+
+    it("returns literals ordered by position", () => {
+        const source = '"a" "b" "c"';
+        const c = leaves([
+            { type: "string_literal", text: '"a"' },
+            { type: "string_literal", text: '"b"' },
+            { type: "string_literal", text: '"c"' },
+        ], source);
+        const root = node("program", [c[2], c[0], c[1]], 0, source.length);
+
+        expect(collectStrings(root).map(s => s.text)).toEqual(["a", "b", "c"]);
+    });
+});
+
+describe("unquoteLiteral", () => {
+    it("strips surrounding quotes", () => {
+        expect(unquoteLiteral('"hello"')).toBe("hello");
+    });
+
+    it("leaves unquoted text alone", () => {
+        expect(unquoteLiteral("hello")).toBe("hello");
+    });
+
+    it("handles an empty literal", () => {
+        expect(unquoteLiteral('""')).toBe("");
     });
 });

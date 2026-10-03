@@ -35,6 +35,12 @@ public final class WasmInterface {
         return INDEXER.references(key).toArray(String[]::new);
     }
 
+    /** Classes whose constant pool contains the given string constant. */
+    @JSExport
+    public static String[] getStringReference(String value) {
+        return INDEXER.stringReferences(value).toArray(String[]::new);
+    }
+
     @JSExport
     public static int getReferenceSize() {
         return INDEXER.referenceCount();
