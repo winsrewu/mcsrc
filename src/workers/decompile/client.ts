@@ -6,21 +6,10 @@ import type { DecompileWorker } from "./worker";
 import { DEFAULT_VERSION, type Version } from "../../logic/vineflower/versions";
 import { toClassFilePath, type ClassName } from "../../utils/Names";
 import type { ReferenceData } from "./worker";
-import { displayLambdas } from "../../logic/Settings";
-import type { Options } from "../../logic/vineflower/vineflower";
 
 function createWorker() {
     const worker = new Worker(new URL("./worker.ts", import.meta.url), { type: "module", name: "decompiler" });
     return Comlink.wrap<DecompileWorker>(worker);
-}
-
-/** Decompiler options, matching Decompiler.getDecompilerOptions without importing it back. */
-function getDecompilerOptions(): Options {
-    const options: Options = {};
-    if (displayLambdas.value) {
-        options["mark-corresponding-synthetics"] = "1";
-    }
-    return options;
 }
 type WorkerInstance = ReturnType<typeof createWorker>;
 
@@ -28,8 +17,6 @@ const MAX_THREADS = navigator.hardwareConcurrency || 4;
 let workers: WorkerInstance[] = [];
 let preferWasmRuntime = true;
 let version: Version = DEFAULT_VERSION;
-/** Version whose decompiler options the AST path has already applied. */
-let astOptionsVersion: Version | undefined;
 
 async function ensureWorkers(count: number) {
     count = Math.min(count, MAX_THREADS);
@@ -68,14 +55,11 @@ export async function setRuntime(preferWasm: boolean) {
 async function setVersion(newVersion: Version) {
     if (version === newVersion) return;
     version = newVersion;
-    astOptionsVersion = undefined;
     await Promise.all(workers.map(w => w.scheduleClose()));
     workers = [];
 }
 
 export async function setOptions(options: vf.Options) {
-    // New options invalidate the decompiled cache, so the AST tokens derived from it too.
-    astOptionsVersion = undefined;
     const sab = new SharedArrayBuffer(Uint32Array.BYTES_PER_ELEMENT);
     const state = new Uint32Array(sab);
     state[0] = 0;
@@ -195,15 +179,10 @@ export async function getReferenceData(className: ClassName[], jar: Jar): Promis
         return [];
     }
 
-    // Classes that aren't cached yet get decompiled here, so the same options the
-    // normal decompile path uses have to be applied first.
-    if (astOptionsVersion !== version) {
-        await setOptions(getDecompilerOptions());
-        astOptionsVersion = version;
-    }
-
     await setVersion(version);
     const worker = await findWorker();
 
+    // Deliberately not calling setOptions here: it clears the decompile cache, so doing it
+    // per batch would throw away the classes the previous batch just decompiled.
     return await worker.getReferenceData(jar.name, jar.blob, className);
 }
