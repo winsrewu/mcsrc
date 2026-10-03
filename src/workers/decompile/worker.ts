@@ -7,6 +7,19 @@ import { openJar } from "../../utils/Jar";
 import { JarIndexer } from "../jar-index/types";
 import { DEFAULT_VERSION, type Version } from "../../logic/vineflower/versions";
 import { classNameFromDottedClassName, toClassName, type ClassName } from "../../utils/Names";
+import { extractIdentifiers } from "./AstParser";
+import type { AstToken } from "../../logic/AstSearch";
+
+/** Everything the reference matcher needs for one class. */
+export interface ReferenceData {
+    className: ClassName;
+    /** Identifiers tree-sitter found in the decompiled source. */
+    identifiers: AstToken[];
+    /** The tokens Vineflower resolved, which resolve those identifiers. */
+    resolved: Token[];
+    /** The decompiled source the offsets refer to. */
+    source: string;
+}
 
 export class DecompileWorker {
     #lastPromise: Promise<unknown> | undefined = undefined;
@@ -36,9 +49,11 @@ export class DecompileWorker {
 
     constructor(version: Version = DEFAULT_VERSION) {
         this.#version = version;
-        this.db.version(7).stores({
+        this.db.version(9).stores({
             options: "key",
             results6: "[className+checksum+language+jarName+version]",
+            // The AST tokens are derived on demand now, so the cache is gone.
+            astTokens: null,
             // clear old data
             results5: null,
             results4: null,
@@ -153,6 +168,34 @@ export class DecompileWorker {
         }
 
         return count;
+    });
+
+    /**
+     * Decompiles the given classes (from the cache when possible) and parses their source
+     * with tree-sitter, returning the identifiers found alongside the tokens Vineflower
+     * resolved. The resolved tokens are what let the caller tell `AClass.foo()` from
+     * `BClass.foo()`, which the syntax tree on its own cannot do.
+     */
+    getReferenceData = (
+        jarName: string,
+        jarBlob: Blob,
+        classNames: ClassName[],
+    ): Promise<ReferenceData[]> => this.schedule(async () => {
+        if (classNames.length === 0) {
+            return [];
+        }
+
+        const jar = new DecompileJar(await openJar(jarName, jarBlob));
+        const sources = await this.#decompile(jarName, jar.classes, classNames, jar.proxy);
+
+        return Promise.all(sources.map(async source => ({
+            className: source.className,
+            identifiers: source.language === "bytecode"
+                ? []
+                : await extractIdentifiers(source.source, source.tokens),
+            resolved: source.tokens,
+            source: source.source,
+        })));
     });
 
     decompile = (

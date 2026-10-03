@@ -1,20 +1,12 @@
 import { combineLatest, debounceTime, distinctUntilChanged, map, Observable, switchMap } from 'rxjs';
-import { minecraftJar } from './MinecraftApi';
-import { performSearch } from './Search';
-import { searchQuery, searchType } from './State';
-import { isClassFilePath, type ClassFilePath } from '../utils/Names';
-import { jarIndex } from '../workers/jar-index/client';
+import { jarIndex, type JarIndex } from '../workers/jar-index/client';
 import type { Field, Method } from '../workers/jar-index/types';
+import { classesList, fileList } from './ClassFiles';
+import { performSearch } from './Search';
+import { searchQuery, searchType, type SearchType } from './State';
+import type { ClassFilePath } from '../utils/Names';
 
-export const fileList = minecraftJar.pipe(
-    distinctUntilChanged(),
-    map(jar => Object.keys(jar.jar.entries))
-);
-
-// File list that only contains outer class files
-export const classesList = fileList.pipe(
-    map(files => files.filter((file): file is ClassFilePath => isClassFilePath(file) && !file.includes('$')))
-);
+export { classesList, fileList };
 
 const debouncedSearchQuery: Observable<string> = searchQuery.pipe(
     debounceTime(200),
@@ -31,23 +23,24 @@ function memberSearchText(member: Method | Field): string {
 }
 
 export const searchResults: Observable<SearchResult[]> = combineLatest([classesList, jarIndex, debouncedSearchQuery, searchType]).pipe(
-    switchMap(async ([classes, index, query, type]) => {
+    switchMap(([classes, index, query, type]): Promise<SearchResult[]> => {
         if (type === "classes") {
-            return performSearch(query, classes).map(value => ({ type, value }));
+            return Promise.resolve(performSearch(query, classes).map(value => ({ type: "classes" as const, value })));
         }
 
-        const memberData = await index.getMemberData();
-        if (type === "methods") {
-            const members = memberData.flatMap(data => data.methods)
-                .filter((member): member is Method => member.length > 0);
+        return index.getMemberData().then(memberData => {
+            if (type === "methods") {
+                const members = memberData.flatMap(data => data.methods)
+                    .filter((member): member is Method => member.length > 0);
 
-            return performSearch(query, members, memberSearchText).map(value => ({ type, value }));
-        }
+                return performSearch(query, members, memberSearchText).map(value => ({ type: "methods" as const, value }));
+            }
 
-        const members = memberData.flatMap(data => data.fields)
-            .filter((member): member is Field => member.length > 0);
+            const members = memberData.flatMap(data => data.fields)
+                .filter((member): member is Field => member.length > 0);
 
-        return performSearch(query, members, memberSearchText).map(value => ({ type, value }));
+            return performSearch(query, members, memberSearchText).map(value => ({ type: "fields" as const, value }));
+        });
     })
 );
 

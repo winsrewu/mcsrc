@@ -135,7 +135,7 @@ function formatSearchResult(item: SearchResult, mutedColor: string) {
 
         return <>
             <span style={{ color: mutedColor }}>{path.slice(0, nameStart)}</span>
-            {path.slice(path.lastIndexOf("/") + 1)}
+            {path.slice(nameStart)}
         </>;
     }
 
