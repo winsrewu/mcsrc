@@ -1,4 +1,5 @@
 import * as Comlink from "comlink";
+import { createSharedState } from "../sharedState";
 import { openJar } from "../../utils/Jar";
 import { classNameFromClassFilePath, isClassFilePath, toClassFilePath } from "../../utils/Names";
 import { writeZip } from "./zip";
@@ -45,13 +46,12 @@ export async function remapMinecraftJar(
             onProgress(Math.round((indexed / classPaths.length) * 50));
         }) : undefined;
 
-        let stateBuffer = new SharedArrayBuffer(Uint32Array.BYTES_PER_ELEMENT);
-        let state = new Uint32Array(stateBuffer);
-        state[0] = 0;
+        const indexState = createSharedState();
 
         const remapIndexStartTime = performance.now();
-        const remapIndexResults = await Promise.all(workers.map(worker =>
-            worker.c.buildRemapIndex(version, jarBlob, classPaths, stateBuffer, batchSize, indexLogger)
+        const remapIndexResults = await Promise.all(workers.map((worker, index) =>
+            worker.c.buildRemapIndex(
+                version, jarBlob, classPaths, batchSize, indexState, index, workers.length, indexLogger)
         ));
         const remapIndex = mergeRemapIndexes(remapIndexResults);
         clearRemapIndexes(remapIndexResults);
@@ -65,15 +65,14 @@ export async function remapMinecraftJar(
             onProgress(50 + Math.round((remapped / jobs.length) * 50));
         }) : undefined;
 
-        stateBuffer = new SharedArrayBuffer(Uint32Array.BYTES_PER_ELEMENT);
-        state = new Uint32Array(stateBuffer);
-        state[0] = 0;
+        const remapState = createSharedState();
 
         let workerResults;
 
         try {
-            workerResults = await Promise.all(workers.map(worker =>
-                worker.c.remapClasses(version, jarBlob, mappingsBlob, remapIndex, jobs, stateBuffer, batchSize, remapLogger)
+            workerResults = await Promise.all(workers.map((worker, index) =>
+                worker.c.remapClasses(
+                    version, jarBlob, mappingsBlob, remapIndex, jobs, batchSize, remapState, index, workers.length, remapLogger)
             ));
         } finally {
             remapIndex.classData.length = 0;

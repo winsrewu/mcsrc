@@ -1,6 +1,7 @@
 import * as Comlink from "comlink";
 import { load } from "../../../java/build/generated/teavm/wasm-gc/mcsrc.wasm-runtime.js";
 import indexerWasm from "../../../java/build/generated/teavm/wasm-gc/mcsrc.wasm?url";
+import { createWorkCoordinator } from "../sharedState";
 import { openJar } from "../../utils/Jar";
 import type { ClassFilePath } from "../../utils/Names";
 import { crc32 } from "./crc32";
@@ -72,23 +73,22 @@ export class RemapWorker {
         jarName: string,
         jarBlob: Blob,
         sourcePaths: ClassFilePath[],
-        stateBuffer: SharedArrayBuffer,
         batchSize: number,
+        stateBuffer?: SharedArrayBuffer,
+        workerIndex?: number,
+        workerCount?: number,
         logger?: (count: number) => Promise<void> | void,
     ): Promise<RemapIndex> {
         const remapper = await this.getRemapper();
         const jar = await openJar(jarName, jarBlob);
-        const state = new Uint32Array(stateBuffer);
         const logPromises: Promise<void>[] = [];
 
         remapper.clearIndex();
 
-        while (true) {
-            const start = Atomics.add(state, 0, batchSize);
-            if (start >= sourcePaths.length) break;
+        const coordinator = createWorkCoordinator(stateBuffer, sourcePaths.length, batchSize, workerIndex, workerCount);
 
+        for (const [start, end] of coordinator.chunks()) {
             let completed = 0;
-            const end = Math.min(start + batchSize, sourcePaths.length);
 
             for (let i = start; i < end; i++) {
                 const sourcePath = sourcePaths[i];
@@ -126,8 +126,10 @@ export class RemapWorker {
         mappingsBlob: Blob,
         remapIndex: RemapIndex,
         jobs: RemapClassJob[],
-        stateBuffer: SharedArrayBuffer,
         batchSize: number,
+        stateBuffer?: SharedArrayBuffer,
+        workerIndex?: number,
+        workerCount?: number,
         logger?: (count: number) => Promise<void> | void,
     ): Promise<RemapWorkerBatchResult> {
         const remapper = await this.getRemapper();
@@ -157,16 +159,12 @@ export class RemapWorker {
             const jar = await openJar(jarName, jarBlob);
             stats.openJarMs = performance.now() - time;
 
-            const state = new Uint32Array(stateBuffer);
             const results: RemapWorkerResult[] = [];
             const logPromises: Promise<void>[] = [];
+            const coordinator = createWorkCoordinator(stateBuffer, jobs.length, batchSize, workerIndex, workerCount);
 
-            while (true) {
-                const start = Atomics.add(state, 0, batchSize);
-                if (start >= jobs.length) break;
-
+            for (const [start, end] of coordinator.chunks()) {
                 let completed = 0;
-                const end = Math.min(start + batchSize, jobs.length);
 
                 for (let i = start; i < end; i++) {
                     const job = jobs[i];

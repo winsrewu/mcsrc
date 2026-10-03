@@ -4,6 +4,7 @@ import { DecompileJar, type DecompileResult } from "./types";
 import type { Jar } from "../../utils/Jar";
 import type { DecompileWorker } from "./worker";
 import { DEFAULT_VERSION, type Version } from "../../logic/vineflower/versions";
+import { createSharedState } from "../sharedState";
 import { toClassFilePath, type ClassName } from "../../utils/Names";
 import type { ReferenceData } from "./worker";
 
@@ -60,11 +61,12 @@ async function setVersion(newVersion: Version) {
 }
 
 export async function setOptions(options: vf.Options) {
-    const sab = new SharedArrayBuffer(Uint32Array.BYTES_PER_ELEMENT);
-    const state = new Uint32Array(sab);
-    state[0] = 0;
+    const sab = createSharedState();
 
-    await Promise.all(workers.map(w => w.setOptions(options, sab)));
+    // With shared memory the workers elect one writer. Without it, only the first worker
+    // writes; the rest pick the options up from the shared database when they need them.
+    const writers = sab ? workers : workers.slice(0, 1);
+    await Promise.all(writers.map(w => w.setOptions(options, sab)));
 }
 
 export async function deleteCache(): Promise<number> {
@@ -84,9 +86,9 @@ export type DecompileEntireJarTask = {
 };
 
 export function decompileEntireJar(jar: Jar, version: Version, options?: DecompileEntireJarOptions): DecompileEntireJarTask {
-    const sab = new SharedArrayBuffer(Uint32Array.BYTES_PER_ELEMENT);
-    const state = new Uint32Array(sab);
-    state[0] = 0;
+    const sab = createSharedState();
+    // Without shared memory there is no counter to bump, so the workers are told to stop.
+    let stopped = false;
 
     const dJar = new DecompileJar(jar);
     return {
@@ -105,9 +107,10 @@ export function decompileEntireJar(jar: Jar, version: Version, options?: Decompi
 
                 await setVersion(version);
                 await ensureWorkers(optThreads);
-                const result = await Promise.all((workers
-                    .slice(0, optThreads))
-                    .map(w => w.decompileMany(jar.name, jar.blob, classNames, sab, optSplits, optLogger)));
+                const selected = workers.slice(0, optThreads);
+                const result = await Promise.all(selected
+                    .map((w, index) => w.decompileMany(
+                        jar.name, jar.blob, classNames, optSplits, sab, index, selected.length, optLogger, () => stopped)));
                 const total = result.reduce((acc, n) => acc + n, 0);
                 return total;
             } finally {
@@ -116,7 +119,10 @@ export function decompileEntireJar(jar: Jar, version: Version, options?: Decompi
             }
         },
         stop() {
-            Atomics.store(state, 0, dJar.classes.length);
+            stopped = true;
+            if (sab) {
+                Atomics.store(new Uint32Array(sab), 0, dJar.classes.length);
+            }
         },
     };
 }

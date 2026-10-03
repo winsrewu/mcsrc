@@ -8,6 +8,7 @@ import { JarIndexer } from "../jar-index/types";
 import { DEFAULT_VERSION, type Version } from "../../logic/vineflower/versions";
 import { classNameFromDottedClassName, toClassName, type ClassName } from "../../utils/Names";
 import { extractIdentifiers } from "./AstParser";
+import { createWorkCoordinator } from "../sharedState";
 import type { AstToken } from "../../logic/AstSearch";
 
 /** Everything the reference matcher needs for one class. */
@@ -72,12 +73,15 @@ export class DecompileWorker {
         return this.#options;
     }
 
-    setOptions = (options: vf.Options, sab: SharedArrayBuffer) => this.schedule(async () => {
+    setOptions = (options: vf.Options, sab?: SharedArrayBuffer) => this.schedule(async () => {
         this.#options = undefined;
 
-        // Only set the DB on one worker, should be propagated everywhere else.
-        const state = new Uint32Array(sab);
-        if (Atomics.add(state, 0, 1) >= 1) return;
+        // Only set the DB on one worker; the others read it back lazily. Shared memory lets
+        // the workers elect one, and without it the caller only asks the first worker to write.
+        if (sab) {
+            const state = new Uint32Array(sab);
+            if (Atomics.add(state, 0, 1) >= 1) return;
+        }
 
         const dbOptions = await this.db.options.toArray();
 
@@ -113,11 +117,14 @@ export class DecompileWorker {
         jarName: string,
         jarBlob: Blob,
         classNames: ClassName[],
-        sab: SharedArrayBuffer,
         splits: number,
+        sab?: SharedArrayBuffer,
+        workerIndex?: number,
+        workerCount?: number,
         logger?: (index: number) => Promise<void> | void,
+        isStopped?: () => boolean,
     ): Promise<number> => this.schedule(async () => {
-        const state = new Uint32Array(sab);
+        const coordinator = createWorkCoordinator(sab, classNames.length, splits, workerIndex, workerCount);
         const jar = new DecompileJar(await openJar(jarName, jarBlob));
 
         let logPromises: Promise<void>[] = [];
@@ -132,15 +139,14 @@ export class DecompileWorker {
         }
 
         let count = 0;
-        while (true) {
-            const i = Atomics.add(state, 0, splits);
-            if (i >= classNames.length) break;
+        for (const [i, end] of coordinator.chunks()) {
+            if (isStopped?.()) {
+                break;
+            }
 
             const targetClassNames: ClassName[] = [];
-            for (let j = 0; j < splits; j++) {
-                if ((i + j) >= classNames.length) break;
-
-                const className = classNames[i + j];
+            for (let j = i; j < end; j++) {
+                const className = classNames[j];
                 const checksum = jar.proxy[className]?.checksum;
                 if (!checksum) continue;
 
