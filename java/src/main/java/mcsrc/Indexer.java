@@ -23,7 +23,7 @@ public final class Indexer {
     private final ArrayList<Entry.Member> callers = new ArrayList<>();
 
     public void index(byte[] classBytes) {
-        new ClassReader(classBytes).accept(new ClassIndexVisitor(this), ClassReader.SKIP_FRAMES);
+        new ClassReader(classBytes).accept(new ClassIndexVisitor(this), ClassReader.SKIP_DEBUG | ClassReader.SKIP_FRAMES);
     }
 
     public void indexDeclarations(byte[] classBytes) {
@@ -72,12 +72,17 @@ public final class Indexer {
 
     public void clear() {
         references = new HashMap<>();
-        classes = new HashMap<>();
-        members = new HashMap<>();
+        clearDeclarations();
         callers.clear();
         callers.trimToSize();
         referenceIds = null;
         strings = null;
+    }
+
+    /** Releases exported declarations while preserving references and their callers. */
+    public void clearDeclarations() {
+        classes = new HashMap<>();
+        members = new HashMap<>();
     }
 
     /** Compacts the index and releases build-only dictionaries. Further indexing is supported. */
