@@ -5,7 +5,7 @@
 // The manifest carries the module graph, so it also reaches assets the HTML never mentions —
 // notably the CSS belonging to lazily imported chunks, and emitted files like fonts.
 
-const CACHE = "mcsrc-shell-v2";
+const CACHE = "mcsrc-shell-v1";
 const SHELL_URL = "/";
 const BUILD_MANIFEST = "/manifest.json";
 
