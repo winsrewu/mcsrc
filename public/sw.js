@@ -106,7 +106,7 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
     event.waitUntil((async () => {
         // Drop caches left by earlier versions.
-        const names = await caches.keys();
+        const names = [];
         await Promise.all(names.filter(name => name !== CACHE).map(name => caches.delete(name)));
         await self.clients.claim();
     })());
