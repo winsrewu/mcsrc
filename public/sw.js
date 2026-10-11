@@ -1,9 +1,5 @@
 // Service worker: precaches the app shell and the modules the build emitted, so the SPA can
 // open with no network.
-//
-// The file list comes from the Vite build manifest rather than from scraping index.html.
-// The manifest carries the module graph, so it also reaches assets the HTML never mentions —
-// notably the CSS belonging to lazily imported chunks, and emitted files like fonts.
 
 const CACHE = "mcsrc-shell-v1";
 const SHELL_URL = "/";

@@ -40,8 +40,6 @@ export default defineConfig({
   },
   build: {
     sourcemap: true,
-    // Emitted so the service worker can precache exactly the modules the app ships,
-    // including the CSS pulled in by lazily imported chunks that index.html never mentions.
     manifest: 'manifest.json',
     chunkSizeWarningLimit: 10000,
     rollupOptions: {
